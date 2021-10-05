@@ -6,7 +6,7 @@ use itertools::Itertools;
 use rscam::{Camera, Config};
 
 use rustface::{Detector, FaceInfo, ImageData};
-use image::{GrayImage, DynamicImage};
+use image::{GrayImage, DynamicImage, Bgr};
 
 use tflite::{FlatBufferModel, InterpreterBuilder, ops::builtin::BuiltinOpResolver};
 use wgpu::util::DeviceExt;
@@ -235,10 +235,10 @@ fn mask_pipeline(upstream: Receiver<DynamicImage>, downstream: SyncSender<Vec<Ve
             // Inputs: 0
             // Tensor   0 input_1              kTfLiteFloat32  kTfLiteArenaRw     442368 bytes ( 0.4 MB)  1 192 192 3
             let input = if let Ok(i) = interpreter.tensor_data_mut::<f32>(inputs[0]) { i } else { return; };
-            for (vector, bgr) in input.chunks_exact_mut(3).zip_eq(pic_iter) {
-                vector[0] = bgr[0] as f32 / 255.0;
-                vector[1] = bgr[1] as f32 / 255.0;
-                vector[2] = bgr[2] as f32 / 255.0;
+            for (vector, &Bgr([b, g, r])) in input.chunks_exact_mut(3).zip_eq(pic_iter) {
+                vector[0] = b as f32 / 255.0; // x
+                vector[1] = g as f32 / 255.0; // y
+                vector[2] = r as f32 / 255.0; // z
             }
             if interpreter.invoke().is_err() { return; };
             // OUTPUT: As output tensor needs access to data we need to declare after we are done mutating input.
@@ -259,7 +259,7 @@ fn mask_pipeline(upstream: Receiver<DynamicImage>, downstream: SyncSender<Vec<Ve
                 // Adjust for window reverse direction change in y and 0 for both x and y
                 // being in the middle of the window vs bottom left corner.
                 // Also adjust for mirror in x direction.
-                // Normalize from 0 -> 192 to -1.0 -> 1.0
+                // Normalize from 0 -> 191 to -1.0 -> 1.0
                 vertices.push(Vertex {
                     position: [
                         // x
