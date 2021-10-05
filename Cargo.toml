@@ -1,0 +1,33 @@
+[package]
+name = "mask"
+version = "0.1.0"
+edition = "2018"
+resolver = "2"
+
+[dependencies]
+#structopt = "0.3"
+itertools = "0.10.1"
+
+# Following for face landmark AI
+tflite = "0.9.6"
+image = "0.23"
+#fast_image_resize = "0.3.0"
+
+# Following for rustface
+rustface = "0.1.7"
+#image
+
+# Following for V4L2 Videocamera/webcam
+rscam = "0.5.5"
+
+# Following for windows GUI
+winit = "0.25"
+cgmath = "0.18"
+env_logger = "0.9"
+log = "0.4"
+wgpu = "0.10"
+pollster = "0.2"
+bytemuck = { version = "1.4", features = [ "derive" ] }
+
+[profile.release]
+lto = true

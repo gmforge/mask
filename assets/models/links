@@ -1,0 +1,4 @@
+face detection - BSD 2-Clause License:
+  https://github.com/atomashpolskiy/rustface/raw/master/model/seeta_fd_frontal_v1.0.bin
+face landmarks - Apache 2.0 License:
+  https://github.com/google/mediapipe/raw/master/mediapipe/modules/face_landmark/face_landmark.tflite
