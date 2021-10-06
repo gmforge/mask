@@ -24,15 +24,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Setup face detect
     let (face_detect_tx, face_detect_rx) = sync_channel::<DynamicImage>(0);
     thread::spawn(move || detect_faces_pipeline(camera_rx, face_detect_tx));
-    // Setup mask
-    let (mask_tx, mask_rx) = sync_channel::<Vec<Vertex>>(0);
-    thread::spawn(move || mask_pipeline(face_detect_rx, mask_tx));
     // Setup display
     // Note that this UI code for utilizing WGPU came straight from:
     //   https://sotrh.github.io/learn-wgpu/beginner/tutorial4-buffer/
     let event_loop = EventLoop::<CustomEvent>::with_user_event();
     let event_loop_proxy = event_loop.create_proxy();
-    thread::spawn(move || display_pipeline(mask_rx, event_loop_proxy));
+    // Setup mask to send events to windo event loop
+    thread::spawn(move || mask_pipeline(face_detect_rx, event_loop_proxy));
 
     let window = WindowBuilder::new()
         .with_title("MasQRaidr")
@@ -220,7 +218,7 @@ impl Vertex {
     }
 }
 
-fn mask_pipeline(upstream: Receiver<DynamicImage>, downstream: SyncSender<Vec<Vertex>>) {
+fn mask_pipeline(upstream: Receiver<DynamicImage>, event_loop_proxy: winit::event_loop::EventLoopProxy<CustomEvent>) {
     let buffer = include_bytes!("../assets/models/face_landmark.tflite");
     let flat_buffer_model = if let Ok(fbm) = FlatBufferModel::build_from_buffer(buffer.to_vec()) { fbm } else { return; };
     let resolver = BuiltinOpResolver::default();
@@ -288,8 +286,9 @@ fn mask_pipeline(upstream: Receiver<DynamicImage>, downstream: SyncSender<Vec<Ve
                     ]
                 })
             }
-            // Send vectors to display_pipeline when that process is ready
-            if downstream.send(vertices).is_err() { break; }
+            // Wake up the event_loop once every face landmark calculation
+            // and dispatch a custom event on a different thread.
+            if event_loop_proxy.send_event(CustomEvent::Mesh(vertices)).is_err() { break; }
         } else {
             break;
         }
@@ -299,18 +298,6 @@ fn mask_pipeline(upstream: Receiver<DynamicImage>, downstream: SyncSender<Vec<Ve
 #[derive(Debug, Clone)]
 enum CustomEvent {
     Mesh(Vec<Vertex>),
-}
-
-fn display_pipeline(upstream: Receiver<Vec<Vertex>>, event_loop_proxy: winit::event_loop::EventLoopProxy<CustomEvent>) {
-    // Wake up the event_loop once every face landmark calculation
-    // and dispatch a custom event from a different thread.
-    loop {
-        if let Ok(mesh) = upstream.recv() {
-            if event_loop_proxy.send_event(CustomEvent::Mesh(mesh)).is_err() { break; }
-        } else {
-            break;
-        }
-    }
 }
 
 // trangle tessellation indices came from mediapipe javascript repo

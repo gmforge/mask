@@ -19,7 +19,7 @@ In this thread we use the Rust **rustface** AI library along with its `seeta_fd_
 ### Map Face Landmarks from the ROI (thread 3)
 This thread uses the Rust Tensor Flow Lite **tflite** AI library along with the mediapipe `face_landmark.tflite` trained model to detect the face landmarks. If the detection score is high enough we turn those 486 landmarks that form a mesh structure into vertices associated with each point. We then pass these vertices over a channel to the next stage of the pipeline.
 
-### Render the Face Landmarks on the Video Card (thread 4&5)
+### Render the Face Landmarks on the Video Card (thread 4)
 This thread uses the Rust **wgpu** and **winit** libraries to render the face mesh structure using shaders provided by the github.com/sotrh/learn-wgpu/ tutorial and along with tessellation indices found in the mediapipe javascript face_landmark code.
 
 ## Issues and barriers.
