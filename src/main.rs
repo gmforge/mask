@@ -252,10 +252,7 @@ fn mask_pipeline(upstream: Receiver<DynamicImage>, downstream: SyncSender<Vec<Ve
             let mut vertices: Vec<Vertex> = Vec::new();
             for vertex in output1.chunks(3) {
                 // Use Z distance as how dark point is
-                let mut grey = (vertex[2]+25.0).abs()/50.0;
-                if grey > 1.0 {
-                    grey = 1.0
-                }
+                let grey = 1.0 - ((vertex[2]+25.0).abs()/50.0).min(1.0);
                 // Adjust for window reverse direction change in y and 0 for both x and y
                 // being in the middle of the window vs bottom left corner.
                 // Also adjust for mirror in x direction.
@@ -304,7 +301,7 @@ fn display_pipeline(upstream: Receiver<Vec<Vertex>>, event_loop_proxy: winit::ev
     }
 }
 
-// tesselation points came from mediapipe javascript repo
+// trangle tessellation indices came from mediapipe javascript repo
 const INDICES: &[u16] = &[
     // 600 bytes = 10*10 triangles * 3 vertex-index/triangle * 2 bytes/vertex-index
     127, 34,139,   11,  0, 37,  232,231,120,   72, 37, 39,  128,121, 47,  232,121,128,  104, 69, 67,  175,171,148,  118, 50,101,   73, 39, 40,
