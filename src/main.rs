@@ -155,9 +155,19 @@ fn detect_faces_pipeline(upstream: Receiver<DynamicImage>, downstream: SyncSende
             let pic = fullpic.resize(256, 192, image::imageops::FilterType::Triangle);
             let faces = detect_faces(&mut *detector, &pic.to_luma8());
             // Only grab first face
-            if let Some(face) =  faces.first() {
+            let mut max_size = 0;
+            let mut face = None;
+            for f in &faces {
+                let size = f.bbox().width() * f.bbox().height();
+                if size > max_size {
+                    if f.score() > 0.0 {
+                        max_size = size;
+                        face = Some(f);
+                    }
+                }
+            }
+            if let Some(face) =  face {
                 // println!("face detect confidence level: {:?}", face.score);
-                if face.score() < 0.0 { continue; }
                 let bbox = face.bbox();
                 // TODO: As x and y are i32 types need to verify that x and y cannot be
                 // off the image. i.e. as in negative values or larger than image.
@@ -170,7 +180,9 @@ fn detect_faces_pipeline(upstream: Receiver<DynamicImage>, downstream: SyncSende
                     .resize(192, 192, image::imageops::FilterType::Triangle)
             } else {
                 // Was not able to find any faces so we will just send cropped pic
-                pic.crop_imm(32, 0, 192, 192)
+                // pic.crop_imm(32, 0, 192, 192)
+                println!("Unable to detect face with sufficient score");
+                continue;
             }
         } else {
             break;
@@ -246,9 +258,9 @@ fn mask_pipeline(upstream: Receiver<DynamicImage>, downstream: SyncSender<Vec<Ve
             // Tensor 213 conv2d_21            kTfLiteFloat32  kTfLiteArenaRw       5616 bytes ( 0.0 MB)  1 1 1 1404
             let output1: &[f32] = if let Ok(o) = interpreter.tensor_data(outputs[0]) { o } else { return; };
             // Tensor 210 conv2d_31            kTfLiteFloat32  kTfLiteArenaRw          4 bytes ( 0.0 MB)  1 1 1 1
-            let output2: &[f32] = if let Ok(o) = interpreter.tensor_data(outputs[1]) { o } else { return; };
-            // println!("mask confidence level: {:?}", output2[0]);
-            if output2[0] < 0.0 { continue; }
+            //let output2: &[f32] = if let Ok(o) = interpreter.tensor_data(outputs[1]) { o } else { return; };
+            //println!("mask confidence level: {:?}", output2[0]);
+            //if output2[0] < 0.0 { continue; }
             let mut vertices: Vec<Vertex> = Vec::new();
             for vertex in output1.chunks(3) {
                 // Use Z distance as how dark point is
