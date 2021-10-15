@@ -1,4 +1,5 @@
 mod render;
+mod texture;
 use std::error::Error;
 use std::sync::mpsc::{sync_channel, SyncSender, Receiver};
 use std::thread;
@@ -18,11 +19,11 @@ use winit::{
     window::WindowBuilder,
 };
 
-use self::render::{Vertex, State};
+use self::render::{ColorVertex, State};
 
 #[derive(Debug, Clone)]
 enum CustomEvent {
-    Mesh(Vec<Vertex>),
+    ImageMesh((DynamicImage, Vec<ColorVertex>)),
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -93,12 +94,36 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // RedrawRequested will only trigger once, unless we manually request it.
                 window.request_redraw();
             }
-            Event::UserEvent(CustomEvent::Mesh(mesh)) => {
-                state.vertex_buffer = Some(state.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Vertex Buffer"),
+            Event::UserEvent(CustomEvent::ImageMesh((image, mesh))) => {
+                state.color_vertex_buffer = Some(state.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Color Vertex Buffer"),
                     contents: bytemuck::cast_slice(&mesh[..]),
                     usage: wgpu::BufferUsages::VERTEX,
                 }));
+                // TODO: setup texture
+                // pub texture_bind_group_layout: wgpu::BindGroupLayout,
+                // pub diffuse_texture: Option<texture::Texture>,
+                // pub diffuse_bind_group: Option<wgpu::BindGroup>,
+                // Image is rgb8 and need rgba8
+                let image = image.to_rgba8();
+                let diffuse_texture =
+                    texture::Texture::from_image(&state.device, &state.queue, &DynamicImage::ImageRgba8(image), Some("face detected")).unwrap();
+                state.diffuse_bind_group = Some(state.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    layout: &state.texture_bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                        },
+                    ],
+                    label: Some("diffuse_bind_group"),
+                }));
+                state.diffuse_texture = Some(diffuse_texture);
+
                 match state.render() {
                     Ok(_) => {}
                     // Reconfigure the surface if lost
@@ -210,8 +235,8 @@ fn mask_pipeline(upstream: Receiver<DynamicImage>, event_loop_proxy: winit::even
     if interpreter.allocate_tensors().is_err() { return; };
     loop {
         // Blocking on upstream cropped image of detected area for processing
-        if let Ok(pic) = upstream.recv() {
-            let pic = pic.to_bgr8();
+        if let Ok(image) = upstream.recv() {
+            let pic = image.to_bgr8();
             // Number of pixels occationally come up short when user is partly off the screen.
             if pic.width() != 192 || pic.height() != 192 {
                 println!("Got odd size pic {:?}, {:?}", pic.width(), pic.height());
@@ -240,7 +265,7 @@ fn mask_pipeline(upstream: Receiver<DynamicImage>, event_loop_proxy: winit::even
             //let output2: &[f32] = if let Ok(o) = interpreter.tensor_data(outputs[1]) { o } else { return; };
             //println!("mask confidence level: {:?}", output2[0]);
             //if output2[0] < 0.0 { continue; }
-            let mut vertices: Vec<Vertex> = Vec::new();
+            let mut vertices: Vec<ColorVertex> = Vec::new();
             for vertex in output1.chunks(3) {
                 // Use Z distance as how dark point is
                 let grey = 1.0 - ((vertex[2]+25.0).abs()/50.0).min(1.0);
@@ -248,7 +273,7 @@ fn mask_pipeline(upstream: Receiver<DynamicImage>, event_loop_proxy: winit::even
                 // being in the middle of the window vs bottom left corner.
                 // Also adjust for mirror in x direction.
                 // Normalize from 0 -> 191 to -1.0 -> 1.0
-                vertices.push(Vertex {
+                vertices.push(ColorVertex {
                     position: [
                         // x
                         (vertex[0]/-95.5 + 1.0),
@@ -264,12 +289,12 @@ fn mask_pipeline(upstream: Receiver<DynamicImage>, event_loop_proxy: winit::even
                         grey,
                         // blue
                         grey,
-                    ]
+                    ],
                 })
             }
             // Wake up the event_loop once every face landmark calculation
             // and dispatch a custom event on a different thread.
-            if event_loop_proxy.send_event(CustomEvent::Mesh(vertices)).is_err() { break; }
+            if event_loop_proxy.send_event(CustomEvent::ImageMesh((image, vertices))).is_err() { break; }
         } else {
             break;
         }
