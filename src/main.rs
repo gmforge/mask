@@ -175,7 +175,8 @@ fn detect_faces_pipeline(upstream: Receiver<DynamicImage>, downstream: SyncSende
     let model_buffer = include_bytes!("../assets/models/seeta_fd_frontal_v1.0.bin");
     let model = if let Ok(model) = rustface::read_model(&model_buffer[..]) { model } else { return; };
     let mut detector = rustface::create_detector_with_model(model);
-    detector.set_min_face_size(20);
+    detector.set_window_size(48);
+    detector.set_min_face_size(48);
     detector.set_score_thresh(2.0);
     detector.set_pyramid_scale_factor(0.8);
     detector.set_slide_window_step(4, 4);
@@ -185,31 +186,34 @@ fn detect_faces_pipeline(upstream: Receiver<DynamicImage>, downstream: SyncSende
         let pic = if let Ok(fullpic) = upstream.recv() {
             // Resize from 640x480 to 2.5 smaller on each side
             let pic = fullpic.resize(256, 192, image::imageops::FilterType::Triangle);
+            // Note detection bbox is jittery, as its size increases and decreases;
+            // so need to act like steady cam or find some way to keep the size
+            // consistent. We may just send 3/4 of the image height.
+            // (144x144 image with 48 pixels left)
             let faces = detect_faces(&mut *detector, &pic.to_luma8());
-            // Only grab first face
-            let mut max_size = 0;
+            let mut max_score = 0.0;
             let mut face = None;
             for f in &faces {
-                let size = f.bbox().width() * f.bbox().height();
-                if size > max_size {
-                    if f.score() > 0.0 {
-                        max_size = size;
-                        face = Some(f);
-                    }
+                if f.score() > max_score {
+                    max_score = f.score();
+                    face = Some(f);
                 }
             }
             if let Some(face) =  face {
                 // println!("face detect confidence level: {:?}", face.score);
                 let bbox = face.bbox();
-                // TODO: As x and y are i32 types need to verify that x and y cannot be
-                // off the image. i.e. as in negative values or larger than image.
+                // Since detection crops out bottom of the mouth and captures much of the forehead
+                // will add extra 20% of height.
+                //let dh = bbox.height() / 5;
+                //y = if y + (dh as i32) < 192 { y + (dh as i32) } else { 192 };
+                // println!("({:?}x, {:?}y)", x, y);
                 fullpic.crop_imm(
-                        (bbox.x() as f32 * 2.5).round() as u32,
-                        (bbox.y() as f32 * 2.5).round() as u32,
-                        (bbox.width() as f32 * 2.5).round() as u32,
-                        (bbox.height() as f32 * 2.5).round() as u32,
+                        bbox.x() as u32 * 25 / 10,
+                        bbox.y() as u32 * 25 / 10,
+                        bbox.width() * 25 / 10,
+                        bbox.height() * 25 / 10,
                     )
-                    .resize(192, 192, image::imageops::FilterType::Triangle)
+                    .resize_exact(192, 192, image::imageops::FilterType::Triangle)
             } else {
                 // Was not able to find any faces so we will just send cropped pic
                 // pic.crop_imm(32, 0, 192, 192)
