@@ -186,10 +186,6 @@ fn detect_faces_pipeline(upstream: Receiver<DynamicImage>, downstream: SyncSende
         let pic = if let Ok(fullpic) = upstream.recv() {
             // Resize from 640x480 to 2.5 smaller on each side
             let pic = fullpic.resize(256, 192, image::imageops::FilterType::Triangle);
-            // Note detection bbox is jittery, as its size increases and decreases;
-            // so need to act like steady cam or find some way to keep the size
-            // consistent. We may just send 3/4 of the image height.
-            // (144x144 image with 48 pixels left)
             let faces = detect_faces(&mut *detector, &pic.to_luma8());
             let mut max_score = 0.0;
             let mut face = None;
@@ -200,23 +196,31 @@ fn detect_faces_pipeline(upstream: Receiver<DynamicImage>, downstream: SyncSende
                 }
             }
             if let Some(face) =  face {
-                // println!("face detect confidence level: {:?}", face.score);
                 let bbox = face.bbox();
                 // Since detection crops out bottom of the mouth and captures much of the forehead
                 // will add extra 20% of height.
                 //let dh = bbox.height() / 5;
                 //y = if y + (dh as i32) < 192 { y + (dh as i32) } else { 192 };
-                // println!("({:?}x, {:?}y)", x, y);
+                // Note detection bbox is jittery, as its size increases and decreases;
+                // so need to act like steady cam or find some way to keep the size
+                // consistent. For the moment we will always send 2/3 of the image height
+                // or a 128x128 image centered on the detected face to the next stage.
+                // This will also fix the mouth being cropped out of the detected image,
+                // but at the expense of limiting how close the face may be from the camera.
+                let cx = bbox.x() as u32 + (bbox.width() / 2);
+                let cy = bbox.y() as u32 + (bbox.height() / 2);
+                let x = if cx < 65 { 0 } else if cx > (256-64) { 256-128 } else { cx-64 };
+                let y = if cy < 64 { 0 } else if cy > (192-64) { 192-128 } else { cy-64 };
                 fullpic.crop_imm(
-                        bbox.x() as u32 * 25 / 10,
-                        bbox.y() as u32 * 25 / 10,
-                        bbox.width() * 25 / 10,
-                        bbox.height() * 25 / 10,
+                        x * 25 / 10,
+                        y * 25 / 10,
+                        128 * 25 / 10,
+                        128 * 25 / 10,
                     )
                     .resize_exact(192, 192, image::imageops::FilterType::Triangle)
             } else {
                 // Was not able to find any faces so we will just send cropped pic
-                // pic.crop_imm(32, 0, 192, 192)
+                //pic.crop_imm(32, 0, 192, 192)
                 println!("Unable to detect face with sufficient score");
                 continue;
             }
@@ -241,7 +245,9 @@ fn mask_pipeline(upstream: Receiver<DynamicImage>, event_loop_proxy: winit::even
         // Blocking on upstream cropped image of detected area for processing
         if let Ok(image) = upstream.recv() {
             let pic = image.to_bgr8();
-            // Number of pixels occationally come up short when user is partly off the screen.
+            // Number of pixels occationally come up short when user is partly off the screen,
+            // or when float rounding is off by 1 pixel.
+            // This should not be a problem any more since we are now using resize_exact
             if pic.width() != 192 || pic.height() != 192 {
                 println!("Got odd size pic {:?}, {:?}", pic.width(), pic.height());
                 continue;
