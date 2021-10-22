@@ -8,7 +8,7 @@ cargo build --release
 ```
 
 ## Purpose
-This is a Rust project to map human expressions from a live video on to a mesh structure forming a face. At the moment the applications is broken into about 4 sections that captures video frames, detect faces in the frame and crops one of the faces, take the cropped image and detects face landmarks from the image, and then render the mesh on a video card. Using this is as an model on how to use tensorflow tflite and other rust AI tools, as well as a test example of using channels between threads to form a pipeline.
+This is a Rust project to map human expressions from a live video on to a mesh structure forming a face. At the moment the applications is broken into about 4 sections that captures video frames, detect faces in the frame and crops one of the faces, take the cropped image and detects face landmarks from the image, and then have the video card render the mesh and ROI onto a window. This project was mostly started as an example on how to use tensorflow tflite and other rust AI tools, as well as how to use channels between threads to form a pipeline.
 
 ### V4L2 Videocamera/webcam frame capture (thread 1)
 In this thread we use the Rust **rscam** library which interfaces with the Video for Linux interface to capture frames. It then passes the frames over a channel to the next stage of the pipeline.
